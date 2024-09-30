@@ -104,12 +104,56 @@ app.get("/api/campaigns", async (req, res) => {
 //   }
 // });
 
-const fetchCampaignStats = async (campaignId) => {
+// const fetchCampaignStats = async (campaignId) => {
+//   try {
+//     const response = await axios.get(
+//       `https://api.woodpecker.co/rest/v1/campaign_list?id=${campaignId}`,
+//       { headers: getAuthHeader() }
+//     );
+//     return response.data;
+//   } catch (error) {
+//     if (error.response && error.response.status === 409) {
+//       console.warn(`Conflict fetching stats for campaign ${campaignId}:`, error.response.data);
+//       return null; // Return null for campaigns causing conflicts
+//     }
+//     throw error; // Re-throw other errors
+//   }
+// };
+
+// app.get("/api/running-campaigns", async (req, res) => {
+//   try {
+//     const campaignsData = await fetchCampaigns();
+
+//     const campaignsWithStats = await Promise.all(
+//       campaignsData.map(async (campaign) => {
+//         const stats = await fetchCampaignStats(campaign.id);
+//         if (stats) { // Only include campaigns with valid stats
+//           return { ...campaign, stats };
+//         }
+//         return null; // Skip this campaign if stats are unavailable
+//       })
+//     );
+
+//     // Filter out null values (campaigns that returned 409 conflicts)
+//     const validCampaigns = campaignsWithStats.filter((campaign) => campaign !== null);
+
+//     res.json(validCampaigns);
+//   } catch (error) {
+//     console.error("Error fetching running campaigns:", error.message);
+//     res.status(500).json({ error: "Failed to fetch running campaigns" });
+//   }
+// });
+
+// Helper function to introduce a delay
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchCampaignStatsWithThrottle = async (campaignId, delayTime = 500) => {
   try {
     const response = await axios.get(
       `https://api.woodpecker.co/rest/v1/campaign_list?id=${campaignId}`,
       { headers: getAuthHeader() }
     );
+    await delay(delayTime); // Wait before sending the next request
     return response.data;
   } catch (error) {
     if (error.response && error.response.status === 409) {
@@ -124,26 +168,24 @@ app.get("/api/running-campaigns", async (req, res) => {
   try {
     const campaignsData = await fetchCampaigns();
 
-    const campaignsWithStats = await Promise.all(
-      campaignsData.map(async (campaign) => {
-        const stats = await fetchCampaignStats(campaign.id);
-        if (stats) { // Only include campaigns with valid stats
-          return { ...campaign, stats };
-        }
-        return null; // Skip this campaign if stats are unavailable
-      })
-    );
+    // Fetch stats for campaigns sequentially with throttling
+    const campaignsWithStats = [];
+    for (const campaign of campaignsData) {
+      const stats = await fetchCampaignStatsWithThrottle(campaign.id);
+      if (stats) {
+        campaignsWithStats.push({
+          ...campaign,
+          stats,
+        });
+      }
+    }
 
-    // Filter out null values (campaigns that returned 409 conflicts)
-    const validCampaigns = campaignsWithStats.filter((campaign) => campaign !== null);
-
-    res.json(validCampaigns);
+    res.json(campaignsWithStats);
   } catch (error) {
     console.error("Error fetching running campaigns:", error.message);
     res.status(500).json({ error: "Failed to fetch running campaigns" });
   }
 });
-
 
 // Start the server
 app.listen(5000, () => {

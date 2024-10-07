@@ -4,13 +4,19 @@ const cors = require("cors");
 
 const app = express();
 app.use(cors());
-
-const apiKey = "493261.90757bd644771a813c0aa7a88460e1fda7ad09f4300776faba6a4f47492aa49f"; 
+app.use(express.json());
+const apiKey =
+  "493261.90757bd644771a813c0aa7a88460e1fda7ad09f4300776faba6a4f47492aa49f";
 
 // Helper function to generate Authorization header
 const getAuthHeader = () => {
   const encodedAuth = Buffer.from(`${apiKey}:`).toString("base64");
   return { Authorization: `Basic ${encodedAuth}` };
+};
+
+const getAuthHeader1 = () => {
+  const encodedAuth = Buffer.from(`${apiKey}:`).toString("base64");
+  return { "X-API-Key": apiKey };
 };
 
 // Fetch all campaigns
@@ -22,16 +28,6 @@ const fetchCampaigns = async () => {
   return response.data;
 };
 
-// Fetch campaign stats for a specific campaign
-// const fetchCampaignStats = async (campaignId) => {
-//   const response = await axios.get(
-//     `https://api.woodpecker.co/rest/v1/campaign_list?id=${campaignId}`,
-//     { headers: getAuthHeader() }
-//   );
-//   return response.data;
-// };
-
-// Classify leads based on stats
 const classifyLeads = (campaignsData) => {
   const HotLeads = [];
   const WarmLeads = [];
@@ -84,67 +80,6 @@ app.get("/api/campaigns", async (req, res) => {
   }
 });
 
-// API route to fetch running campaigns and their stats
-// app.get("/api/running-campaigns", async (req, res) => {
-//   try {
-//     const campaignsData = await fetchCampaigns();
-    
-//     // Use Promise.all to fetch all campaign stats concurrently
-//     const campaignsWithStats = await Promise.all(
-//       campaignsData.map(async (campaign) => {
-//         const stats = await fetchCampaignStats(campaign.id);
-//         return { ...campaign, stats };
-//       })
-//     );
-
-//     res.json(campaignsWithStats);
-//   } catch (error) {
-//     console.error("Error fetching running campaigns:", error.message);
-//     res.status(500).json({ error: "Failed to fetch running campaigns" });
-//   }
-// });
-
-// const fetchCampaignStats = async (campaignId) => {
-//   try {
-//     const response = await axios.get(
-//       `https://api.woodpecker.co/rest/v1/campaign_list?id=${campaignId}`,
-//       { headers: getAuthHeader() }
-//     );
-//     return response.data;
-//   } catch (error) {
-//     if (error.response && error.response.status === 409) {
-//       console.warn(`Conflict fetching stats for campaign ${campaignId}:`, error.response.data);
-//       return null; // Return null for campaigns causing conflicts
-//     }
-//     throw error; // Re-throw other errors
-//   }
-// };
-
-// app.get("/api/running-campaigns", async (req, res) => {
-//   try {
-//     const campaignsData = await fetchCampaigns();
-
-//     const campaignsWithStats = await Promise.all(
-//       campaignsData.map(async (campaign) => {
-//         const stats = await fetchCampaignStats(campaign.id);
-//         if (stats) { // Only include campaigns with valid stats
-//           return { ...campaign, stats };
-//         }
-//         return null; // Skip this campaign if stats are unavailable
-//       })
-//     );
-
-//     // Filter out null values (campaigns that returned 409 conflicts)
-//     const validCampaigns = campaignsWithStats.filter((campaign) => campaign !== null);
-
-//     res.json(validCampaigns);
-//   } catch (error) {
-//     console.error("Error fetching running campaigns:", error.message);
-//     res.status(500).json({ error: "Failed to fetch running campaigns" });
-//   }
-// });
-
-// Helper function to introduce a delay
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const fetchCampaignStatsWithThrottle = async (campaignId, delayTime = 500) => {
@@ -157,7 +92,10 @@ const fetchCampaignStatsWithThrottle = async (campaignId, delayTime = 500) => {
     return response.data;
   } catch (error) {
     if (error.response && error.response.status === 409) {
-      console.warn(`Conflict fetching stats for campaign ${campaignId}:`, error.response.data);
+      console.warn(
+        `Conflict fetching stats for campaign ${campaignId}:`,
+        error.response.data
+      );
       return null; // Return null for campaigns causing conflicts
     }
     throw error; // Re-throw other errors
@@ -187,6 +125,87 @@ app.get("/api/running-campaigns", async (req, res) => {
   }
 });
 
+app.post("/api/blacklist-domains", async (req, res) => {
+  const { domains } = req.body;
+
+  if (
+    !Array.isArray(domains) ||
+    !domains.every((domain) => typeof domain === "string")
+  ) {
+    return res
+      .status(400)
+      .json({ error: "Invalid input: domains should be an array of strings" });
+  }
+
+  try {
+    const response = await axios.post(
+      "https://api.woodpecker.co/rest/v2/blacklist/domains",
+      { domains },
+      // { headers: { ...getAuthHeader1(), 'Content-Type': 'application/json' } }
+      {
+        headers: {
+          "X-API-Key":
+            "493261.90757bd644771a813c0aa7a88460e1fda7ad09f4300776faba6a4f47492aa49f",
+        },
+      }
+    );
+
+    res.json(response.data); // Respond with the data returned by the Woodpecker API
+  } catch (error) {
+    console.error("Error blacklisting domains:", error.message);
+
+    // Handle errors returned by the Woodpecker API
+    if (error.response) {
+      res.status(error.response.status).json(error.response.data);
+    } else {
+      res.status(500).json({ error: "Failed to blacklist domains" });
+    }
+  }
+});
+
+app.post("/api/delete-domains", async (req, res) => {
+  const { domains } = req.body;
+  console.log(req.body);
+
+  if (
+    !Array.isArray(domains) ||
+    !domains.every((domain) => typeof domain === "string")
+  ) {
+    return res
+      .status(400)
+      .json({ error: "Invalid input: domains should be an array of strings" });
+  }
+  try {
+    const response = await axios.delete(
+      "https://api.woodpecker.co/rest/v2/blacklist/domains",
+      {
+        domains: [
+          "baddomain.com",
+          "blacklistedomain.io",
+          "nomoreemails.co",
+          "finisheddeal.co.uk",
+          "notmyicp.design",
+        ],
+      },
+      {
+        headers: {
+          "X-API-Key":
+            "493261.90757bd644771a813c0aa7a88460e1fda7ad09f4300776faba6a4f47492aa49f",
+        },
+      }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error blacklisting domains:", error.message);
+
+    if (error.response) {
+      res.status(error.response.status).json(error.response.data);
+    } else {
+      res.status(500).json({ error: "Failed to blacklist domains" });
+    }
+  }
+});
 // Start the server
 app.listen(5000, () => {
   console.log("Server is running on port 5000");
